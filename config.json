@@ -1,0 +1,67 @@
+{
+    "name": "Flair",
+    "path": { //set the path
+        "log": "logs",
+        "accelerator": "accelerator",
+        "results": "results",
+        "checkpoint": "checkpoint",
+        "resume_state": ""
+    },
+    "data": {
+        "train_dataroot": "/share/projects/ottopia/superstable/sr3/flair/data/train_64_512",
+        "test_dataroot": "/share/projects/ottopia/superstable/sr3/flair/data/test_64_512",
+        "l_resolution": 64,
+        "r_resolution": 512,
+        "use_shuffle": true,
+        "num_workers": 1,
+        "train_data_len": 5,
+        "test_data_len": 2
+    },
+    "model": {
+        "image_size": 512,
+        "in_channels": 6,
+        "out_channels": 3,
+        "layers_per_block": 5,
+        "block_out_channels": [
+            32,
+            64,
+            128,
+            256
+        ],
+        "down_block_types": [
+            "DownBlock2D",
+            "DownBlock2D",
+            "DownBlock2D",
+            "DownBlock2D" //Initialize accelerator and tensorboard logging AttnDownBlock2D
+        ],
+        "up_block_types": [
+            "UpBlock2D",
+            "UpBlock2D",
+            "UpBlock2D",
+            "UpBlock2D"
+        ]
+    },
+    "scheduler": {
+        "type": "DDIM",
+        "num_train_timesteps": 1000,
+        "num_test_timesteps": 100,
+        "beta_start": 0.0001,
+        "beta_end": 0.02,
+        "beta_schedule": "linear",
+        "eta": 0
+    },
+    "trainning": {
+        "num_epochs": 3,
+        "batch_size": 1,
+        "use_shuffle": true,
+        "num_workers": 1,
+        "learning_rate": 1e-4,
+        "lr_warmup_steps": 500,
+        "val_freq": 1
+    },
+    "accelerator": {
+        "mixed_presition": "fp16",
+        "gradient_accumulation_steps": 1,
+        "loggin_dir": "/share/projects/ottopia/superstable/SRdiff/test"
+    }
+}
