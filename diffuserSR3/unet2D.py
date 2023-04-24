@@ -1,7 +1,7 @@
 from diffusers import UNet2DModel
 
 
-def crreate_unet2D(opt):
+def create_unet2D(opt):
     
     model = UNet2DModel(
         sample_size = opt['image_size'],  # the target image resolution

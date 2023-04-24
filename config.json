@@ -4,8 +4,7 @@
         "log": "logs",
         "accelerator": "accelerator",
         "results": "results",
-        "checkpoint": "checkpoint",
-        "resume_state": ""
+        "checkpoint": "checkpoint"
     },
     "data": {
         "train_dataroot": "/share/projects/ottopia/superstable/sr3/flair/data/train_64_512",
@@ -15,7 +14,7 @@
         "use_shuffle": true,
         "num_workers": 1,
         "train_data_len": 5,
-        "test_data_len": 2
+        "test_data_len": 50
     },
     "model": {
         "image_size": 512,
@@ -50,14 +49,15 @@
         "beta_schedule": "linear",
         "eta": 0
     },
-    "trainning": {
+    "training": {
         "num_epochs": 3,
         "batch_size": 1,
         "use_shuffle": true,
         "num_workers": 1,
         "learning_rate": 1e-4,
         "lr_warmup_steps": 500,
-        "val_freq": 1
+        "val_freq": 1,
+        "resume_path": "/share/projects/ottopia/superstable/SRdiff/experiments/Flair_230424_122157/checkpoint/checkpoint_epoch_0.pth" //Only fill for retaking training or testing
     },
     "accelerator": {
         "mixed_presition": "fp16",
