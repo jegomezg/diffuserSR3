@@ -39,7 +39,8 @@ def create_dataset(dataset_opt, phase):
                       l_resolution=dataset_opt['l_resolution'],
                       r_resolution=dataset_opt['r_resolution'],
                       split=phase,
-                      data_len=dataset_opt['train_data_len'] if phase == "train" else dataset_opt['test_data_len'])
+                      data_len=dataset_opt['train_data_len'] if phase == "train" else dataset_opt['test_data_len']
+                      )
 
 def create_dataloader(dataset, dataset_opt, phase):
     """

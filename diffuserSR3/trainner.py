@@ -5,7 +5,7 @@ from tqdm import tqdm
 import wandb
 
 from accelerate import Accelerator
-from diffusers.optimization import get_cosine_schedule_with_warmup
+from diffusers.optimization import get_constant_schedule_with_warmup
 
 import torch.nn.functional as F
 
@@ -18,10 +18,13 @@ import diffuserSR3.util as Utils
 
 
 
+
 def setup_model(opt):
     logger = logging.getLogger('base')
     model = Unet.create_unet2D(opt['model'])
     logger.info(f'Model created:\n{model}')
+    num_params = sum(p.numel() for p in model.parameters())  # get the total number of parameters
+    logger.info(f'Model nnumber of parameters:{num_params}')
     return model
 
 def setup_accelerator(opt):
@@ -39,35 +42,36 @@ def setup_accelerator(opt):
 def setup_optimization(model, train_loader, opt):
     logger = logging.getLogger('base')
     optimizer = torch.optim.AdamW(model.parameters(), lr=opt['training']['learning_rate'])
-    lr_scheduler = get_cosine_schedule_with_warmup(
+    lr_scheduler = get_constant_schedule_with_warmup(
         optimizer=optimizer,
         num_warmup_steps=opt['training']['lr_warmup_steps'],
-        num_training_steps=(len(train_loader) * opt['training']['num_epochs']),
     )
-    logger.info('Learning rate     and optimizer created')
+    logger.info('Learning rate and optimizer created')
     return optimizer, lr_scheduler
 
 
 def train_and_evaluate(model, optimizer, lr_scheduler, accelerator, train_loader, val_loader, opt, logger):
     global_step = 0
     logger.info('Starting training:')
-    start_epoch=0
+    start_step=0
     device=model.device
     if opt['training']['resume_path'] is not "":
         logger.info(f'Loading pretrained model from {opt["training"]["resume_path"]}')
-        start_epoch = load_checkpoint(model, optimizer, opt['training']['resume_path'])
-    for epoch in range(start_epoch,opt["training"]['num_epochs']):
-        progress_bar = tqdm(total=len(train_loader), disable=not accelerator.is_local_main_process)
-        progress_bar.set_description(f"Epoch {epoch}")
+        start_step = load_checkpoint(model, optimizer, opt['training']['resume_path'])
+    progress_bar = tqdm(total=opt["training"]['steps'], disable=not accelerator.is_local_main_process)
+
+    for epoch in range(int((opt["training"]['steps']-start_step)/len(train_loader))+1):
+        
         scheduler = Pipeline.create_SR3scheduler(opt['scheduler'], 'train')
 
         for step, (batch, index) in enumerate(train_loader):
+            progress_bar.set_description(f"Epoch {global_step}")
             train_step(model, optimizer, lr_scheduler, accelerator, batch, epoch, global_step, scheduler, progress_bar, logger, device)
             global_step += 1
-
-        if epoch % opt['training']['val_freq'] == 0:
-            evaluate(model, accelerator, val_loader, opt, logger, epoch, global_step)#
-            save_checkpoint(model, optimizer, epoch, opt['path']['checkpoint'])
+            
+            if (global_step+1) % opt['training']['val_freq'] == 0:
+                evaluate(model, accelerator, val_loader, opt, logger, epoch, global_step)
+                save_checkpoint(model, optimizer, epoch, opt['path']['checkpoint'])
 
 
 def train_step(model, optimizer, lr_scheduler, accelerator, batch, epoch, global_step, scheduler, progress_bar, logger, device):
@@ -78,7 +82,7 @@ def train_step(model, optimizer, lr_scheduler, accelerator, batch, epoch, global
 
     with accelerator.accumulate(model):
         noise_pred = model(noisy_images, timesteps, return_dict=False)[0]
-        loss = F.mse_loss(noise_pred, noise[:, 3:, :, :])
+        loss = F.l1_loss(noise_pred, noise[:, 3:, :, :])
         accelerator.backward(loss)
         accelerator.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
@@ -101,6 +105,7 @@ def evaluate(model, accelerator, val_loader, opt, logger, epoch, global_step):
             low_res_image, high_res_image, samples = evaluate_image(sampler, images)
             metrics = Metrics.evaluate_metrics(high_res_image, samples[-1])
             Logger.log_metrics_image(logger, index, metrics, metrics_sum)
+            accelerator.log(metrics, step=global_step)
             Utils.save_image(samples[-1], f'{opt["path"]["results"]}/validation_{index[0]}_{epoch}.png')
             Logger.log_images_to_wandb(accelerator, low_res_image, samples, high_res_image, index)
             del low_res_image, high_res_image, samples
@@ -109,27 +114,6 @@ def evaluate(model, accelerator, val_loader, opt, logger, epoch, global_step):
     logger.info(f'Saving model for epoch {epoch}')
 
 
-def train_and_evaluate(model, optimizer, lr_scheduler, accelerator, train_loader, val_loader, opt, logger):
-    global_step = 0
-    logger.info('Starting training:')
-    start_epoch=0
-    device=model.device
-    if opt['training']['resume_path'] != "":
-        logger.info(f'Loading pretrained model from {opt["training"]["resume_path"]}')
-        start_epoch = load_checkpoint(model, None, opt['training']['resume_path'])  
-    for epoch in range(start_epoch,opt["training"]['num_epochs']):
-        progress_bar = tqdm(total=len(train_loader), disable=not accelerator.is_local_main_process)
-        progress_bar.set_description(f"Epoch {epoch}")
-        scheduler = Pipeline.create_SR3scheduler(opt['scheduler'], 'train')
-
-        for step, (batch, index) in enumerate(train_loader):
-            train_step(model, optimizer, lr_scheduler, accelerator, batch, epoch, global_step, scheduler, progress_bar, logger, device)
-            global_step += 1
-
-        if epoch % opt['training']['val_freq'] == 0:
-            evaluate(model, accelerator, val_loader, opt, logger, epoch, global_step)#
-            save_checkpoint(model, optimizer, epoch, opt['path']['checkpoint'])
-    
 def evaluate_image(sampler, images):
     low_res_image = images[:, :3, :, :]
     high_res_image = images[:, 3:, :, :]
@@ -163,7 +147,7 @@ def test(model,accelerator, val_loader, opt, logger):
 
     logger.info(f'Testing finished')
 
-def save_checkpoint(model, optimizer, epoch, save_path):
+def save_checkpoint(model, optimizer, globap_step, save_path):
     """
     Save model and optimizer state dictionaries to a checkpoint file.
     
@@ -176,9 +160,9 @@ def save_checkpoint(model, optimizer, epoch, save_path):
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     
-    checkpoint_file = os.path.join(save_path, f'checkpoint_epoch_{epoch}.pth')
+    checkpoint_file = os.path.join(save_path, f'checkpoint_step_{globap_step}.pth')
     torch.save({
-        'epoch': epoch,
+        'step': globap_step,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
     }, checkpoint_file)
@@ -202,5 +186,5 @@ def load_checkpoint(model, optimizer, checkpoint_path):
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     except:
         pass # Add debug logg for optimizer loded
-    epoch = checkpoint['epoch']
-    return epoch
+    step = checkpoint['step']
+    return step

@@ -7,7 +7,8 @@ import torch
 import diffuserSR3.dataset as Data
 import diffuserSR3.logger as Logger
 import diffuserSR3.trainner as Train
-
+from xformers.ops import MemoryEfficientAttentionFlashAttentionOp
+from transformers.debug_utils import DebugUnderflowOverflow
 
 
 def main():
@@ -37,7 +38,9 @@ def main():
 
     device = torch.device(f"cuda:0")
     model.to(device)
-
+    #model.enable_xformers_memory_efficient_attention(attention_op=MemoryEfficientAttentionFlashAttentionOp)
+    debug_overflow = DebugUnderflowOverflow(model)
+    
     if opt['phase'] == 'train':
         Train.train_and_evaluate(model, optimizer, lr_scheduler, accelerator, train_loader, val_loader, opt, logger)
     if opt['phase'] == 'test':
